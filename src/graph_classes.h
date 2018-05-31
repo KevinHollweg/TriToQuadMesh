@@ -19,11 +19,14 @@ public:
 	PolyMesh::FaceHandle face1;
 
 	std::vector<PolyMesh::VertexHandle> quad_vertices;
+	PolyMesh::VertexHandle connecting_vertex;
 
 	float cost;
 	bool bad = false;
 
 	bool to_be_used = false;
+	bool use_edge_swap = false;
+	bool use_vertex_duplication = false;
 };
 
 

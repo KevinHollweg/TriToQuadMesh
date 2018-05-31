@@ -25,11 +25,17 @@ void blossom_quad::do_blossom_algo() {
 	OpenMesh::HPropHandleT<int>		hprop_graph_edge_idx;
 	workMesh.add_property(hprop_graph_edge_idx, "hprop_graph_edge_idx");
 	// property, if mesh edge has alredy edge in connection graph
-	OpenMesh::HPropHandleT<int>		hprop_has_graph_edge;
+	OpenMesh::HPropHandleT<bool>		hprop_has_graph_edge;
 	workMesh.add_property(hprop_has_graph_edge, "hprop_has_graph_edge");
 	// property, if face was already used for quad generation
 	OpenMesh::FPropHandleT<int>	fprop_graph_edge_count;
 	workMesh.add_property(fprop_graph_edge_count, "fprop_graph_edge_count");
+	// property, if a vertex was already used for an external edge
+	OpenMesh::VPropHandleT<bool>	vprop_has_external_edge;
+	workMesh.add_property(vprop_has_external_edge, "vprop_has_external_edge");
+	// property for external edge in connection graph
+	OpenMesh::VPropHandleT<int>		vprop_external_edge_idx;
+	workMesh.add_property(vprop_external_edge_idx, "vprop_external_edge_idx");
 
 	// connectivity graph 
 	graph *connection_graph = new graph();
@@ -77,23 +83,218 @@ void blossom_quad::do_blossom_algo() {
 				workMesh.property(hprop_has_graph_edge, oheh) = true;
 				face_graph_edge_count++;
 			}
-			else {
+			else if(fhso.idx() == -1 ) {
 				border_count++;
+			}
+			else if (fhso.idx() != -1 && workMesh.property(hprop_has_graph_edge, heh) == true) {
+				if (!connection_graph->edges[workMesh.property(hprop_graph_edge_idx, heh)].bad) {
+					face_graph_edge_count++;
+				}
 			}
 		}
 		// add external edges
+		// if face has one border
 		if (border_count == 1) {
 			for (auto fh_it = workMesh.fh_iter(fh); fh_it.is_valid(); ++fh_it) {
 				PolyMesh::HalfedgeHandle heh = *fh_it;
-				
+				PolyMesh::FaceHandle fhs = workMesh.face_handle(heh);
+				PolyMesh::FaceHandle fhso = workMesh.opposite_face_handle(heh);
+				// find halfedge, that is a borader edge
+				if (fhso.idx() == -1) {
+					// edge containing the "from vertex" of the half edge
+					PolyMesh::VertexHandle fromVertH = workMesh.from_vertex_handle(heh);
+					if (!workMesh.property(vprop_has_external_edge, fromVertH)) {						
+						graph_edge *external_edge = new graph_edge();
+						external_edge->face0 = fhs;
+						external_edge->connecting_vertex = fromVertH;
+						external_edge->cost = EXTERNAL_EDGE_COST;
+						int count_incomming_hes = 0;
+						// finde connected edge face
+						for (auto vheh_it = workMesh.voh_iter(fromVertH); vheh_it.is_valid(); ++vheh_it) {
+							count_incomming_hes++;
+							PolyMesh::HalfedgeHandle vheh = *vheh_it;
+							PolyMesh::FaceHandle external_face = workMesh.face_handle(vheh);
+							PolyMesh::FaceHandle conencted_face = workMesh.opposite_face_handle(vheh);
+							if (external_face.idx() == -1) {
+								external_edge->face1 = conencted_face;
+							}
+						}
+						// faces are neighbours
+						if (count_incomming_hes == 3) {
+							external_edge->~graph_edge();
+						}
+						// faces are seperated by one other face
+						else if (count_incomming_hes == 4) {
+							workMesh.property(vprop_has_external_edge, fromVertH) = true;
+							workMesh.property(vprop_external_edge_idx, fromVertH) = connection_graph->external_edges_counter;
+							connection_graph->external_edges_counter++;
+							face_graph_edge_count++;
+							external_edge->use_edge_swap = true;
+							connection_graph->external_edges.push_back(*external_edge);
+						}
+						// faces are seperated by more than one face
+						else if (count_incomming_hes >= 5) {
+							workMesh.property(vprop_has_external_edge, fromVertH) = true;
+							workMesh.property(vprop_external_edge_idx, fromVertH) = connection_graph->external_edges_counter;
+							connection_graph->external_edges_counter++;
+							face_graph_edge_count++;
+							external_edge->use_vertex_duplication = true;
+							connection_graph->external_edges.push_back(*external_edge);
+						}
+					}
+					else {
+						face_graph_edge_count++;
+					}
+					// edge containing the "to vertex" of the half edge
+					PolyMesh::VertexHandle toVertH = workMesh.to_vertex_handle(heh);
+					if (!workMesh.property(vprop_has_external_edge, toVertH)) {
+						graph_edge *external_edge = new graph_edge();
+						external_edge->face0 = fhs;
+						external_edge->connecting_vertex = toVertH;
+						external_edge->cost = EXTERNAL_EDGE_COST;
+						int count_outgoing_hes = 0;
+						// finde connected edge face
+						for (auto vheh_it = workMesh.vih_iter(toVertH); vheh_it.is_valid(); ++vheh_it) {
+							count_outgoing_hes++;
+							PolyMesh::HalfedgeHandle vheh = *vheh_it;
+							PolyMesh::FaceHandle external_face = workMesh.face_handle(vheh);
+							PolyMesh::FaceHandle conencted_face = workMesh.opposite_face_handle(vheh);
+							if (external_face.idx() == -1) {
+								external_edge->face1 = conencted_face;
+							}
+						}
+						// faces are neighbours
+						if (count_outgoing_hes == 3) {
+							external_edge->~graph_edge();
+						}
+						// faces are seperated by one other face
+						else if (count_outgoing_hes == 4) {
+							workMesh.property(vprop_has_external_edge, toVertH) = true;
+							workMesh.property(vprop_external_edge_idx, toVertH) = connection_graph->external_edges_counter;
+							connection_graph->external_edges_counter++;
+							face_graph_edge_count++;
+							external_edge->use_edge_swap = true;
+							connection_graph->external_edges.push_back(*external_edge);
+						}
+						// faces are seperated by more than one face
+						else if (count_outgoing_hes >= 5) {
+							workMesh.property(vprop_has_external_edge, toVertH) = true;
+							workMesh.property(vprop_external_edge_idx, toVertH) = connection_graph->external_edges_counter;
+							connection_graph->external_edges_counter++;
+							face_graph_edge_count++;
+							external_edge->use_vertex_duplication = true;
+							connection_graph->external_edges.push_back(*external_edge);
+						}
+					}
+					else {
+						face_graph_edge_count++;
+					}
+				}
 			}
 		}
+		// if face has two borders
 		else if (border_count == 2) {
 			for (auto fh_it = workMesh.fh_iter(fh); fh_it.is_valid(); ++fh_it) {
-				
+				PolyMesh::HalfedgeHandle heh = *fh_it;
+				PolyMesh::FaceHandle fhs = workMesh.face_handle(heh);
+				PolyMesh::FaceHandle fhso = workMesh.opposite_face_handle(heh);
+				// find halfedge, that isn`t a borader edge
+				if (fhso.idx() != -1) {
+					// edge containing the "from vertex" of the half edge
+					PolyMesh::VertexHandle fromVertH = workMesh.from_vertex_handle(heh);
+					if (!workMesh.property(vprop_has_external_edge, fromVertH)) {						
+						graph_edge *external_edge = new graph_edge();
+						external_edge->face0 = fhs;
+						external_edge->connecting_vertex = fromVertH;
+						external_edge->cost = EXTERNAL_EDGE_COST;						
+						int count_incomming_hes = 0;
+						// finde connected edge face
+						for (auto vheh_it = workMesh.vih_iter(fromVertH); vheh_it.is_valid(); ++vheh_it) {
+							count_incomming_hes++;
+							PolyMesh::HalfedgeHandle vheh = *vheh_it;
+							PolyMesh::FaceHandle external_face = workMesh.face_handle(vheh);
+							PolyMesh::FaceHandle conencted_face = workMesh.opposite_face_handle(vheh);
+							if (external_face.idx() == -1) {
+								external_edge->face1 = conencted_face;
+							}
+						}
+						// faces are neighbours
+						if (count_incomming_hes == 3) {
+							external_edge->~graph_edge();
+						}
+						// faces are seperated by one other face
+						else if (count_incomming_hes == 4) {
+							workMesh.property(vprop_has_external_edge, fromVertH) = true;
+							workMesh.property(vprop_external_edge_idx, fromVertH) = connection_graph->external_edges_counter;
+							connection_graph->external_edges_counter++;
+							face_graph_edge_count++;
+							external_edge->use_edge_swap = true;
+							connection_graph->external_edges.push_back(*external_edge);
+						}
+						// faces are seperated by more than one face
+						else if (count_incomming_hes >= 5) {
+							workMesh.property(vprop_has_external_edge, fromVertH) = true;
+							workMesh.property(vprop_external_edge_idx, fromVertH) = connection_graph->external_edges_counter;
+							connection_graph->external_edges_counter++;
+							face_graph_edge_count++;
+							external_edge->use_vertex_duplication =  true;
+							connection_graph->external_edges.push_back(*external_edge);
+						}
+					}
+					else {
+						face_graph_edge_count++;
+					}
+					// edge containing the "to vertex" of the half edge
+					PolyMesh::VertexHandle toVertH = workMesh.to_vertex_handle(heh);
+					if (!workMesh.property(vprop_has_external_edge, toVertH)) {
+						graph_edge *external_edge = new graph_edge();
+						external_edge->face0 = fhs;
+						external_edge->connecting_vertex = toVertH;
+						external_edge->cost = EXTERNAL_EDGE_COST;
+						int count_outgoing_hes = 0;
+						// finde connected edge face
+						for (auto vheh_it = workMesh.voh_iter(toVertH); vheh_it.is_valid(); ++vheh_it) {
+							count_outgoing_hes++;
+							PolyMesh::HalfedgeHandle vheh = *vheh_it;
+							PolyMesh::FaceHandle external_face = workMesh.face_handle(vheh);
+							PolyMesh::FaceHandle conencted_face = workMesh.opposite_face_handle(vheh);
+							if (external_face.idx() == -1) {
+								external_edge->face1 = conencted_face;
+							}
+						}
+						// faces are neighbours
+						if (count_outgoing_hes == 3) {
+							external_edge->~graph_edge();
+						}
+						// faces are seperated by one other face
+						else if (count_outgoing_hes == 4) {
+							workMesh.property(vprop_has_external_edge, toVertH) = true;
+							workMesh.property(vprop_external_edge_idx, toVertH) = connection_graph->external_edges_counter;
+							connection_graph->external_edges_counter++;
+							face_graph_edge_count++;
+							external_edge->use_edge_swap = true;
+							connection_graph->external_edges.push_back(*external_edge);
+						}
+						// faces are seperated by more than one face
+						else if (count_outgoing_hes >= 5) {
+							workMesh.property(vprop_has_external_edge, toVertH) = true;
+							workMesh.property(vprop_external_edge_idx, toVertH) = connection_graph->external_edges_counter;
+							connection_graph->external_edges_counter++;
+							face_graph_edge_count++;
+							external_edge->use_vertex_duplication = true;
+							connection_graph->external_edges.push_back(*external_edge);
+						}
+					}
+					else {
+						face_graph_edge_count++;
+					}
+				}
 			}
 		}
-		
+		else if(border_count == 3) {
+			cout << "Error" << endl;
+			cout << "Face " << fh.idx() << endl;
+		}
 	
 		workMesh.property(fprop_graph_edge_count, fh) = face_graph_edge_count;
 		// check edge count of faces;
