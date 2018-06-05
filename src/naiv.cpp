@@ -23,7 +23,7 @@ struct edge_with_value {
 		m_quality_value(q) 
 		{}
 	bool operator < (const edge_with_value& other_e) const {
-		return (m_quality_value > other_e.m_quality_value);
+		return (m_quality_value < other_e.m_quality_value);
 	}
 };
 

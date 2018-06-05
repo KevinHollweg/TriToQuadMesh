@@ -23,3 +23,9 @@ void graph::print_graph() {
 		}
 	}
 }
+
+void graph::print_sorted_edges() {
+	for (int i = 0; i < edges_counter; i++) {
+		cout << "position " << sorted_edges[i].m_orig_position << " , cost " << sorted_edges[i].m_cost_value << endl;
+	}
+}

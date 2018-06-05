@@ -10,7 +10,8 @@ blossom_quad::~blossom_quad() {}
 
 PolyMesh workMesh;
 std::vector<PolyMesh::VertexHandle> workMesh_Vertex_Vec(15);
-//PolyMesh resultMesh_step1;
+PolyMesh blossomMesh_step1;
+std::vector<PolyMesh::VertexHandle> blossomMesh_step1_vertex_vec;
 
 vector<PolyMesh::FaceHandle> faces_with_one_graph_edge;
 
@@ -39,7 +40,7 @@ void blossom_quad::do_blossom_algo() {
 
 	// connectivity graph 
 	graph *connection_graph = new graph();
-
+	// create connectivity graph
 	for (auto f_it = workMesh.faces_begin(); f_it != workMesh.faces_end(); ++f_it) {
 		PolyMesh::FaceHandle fh = *f_it;
 		int face_graph_edge_count = 0;
@@ -78,10 +79,12 @@ void blossom_quad::do_blossom_algo() {
 				connection_graph->edges.push_back(*internal_edge);
 				workMesh.property(hprop_graph_edge_idx, heh) = connection_graph->edges_counter;
 				workMesh.property(hprop_graph_edge_idx, oheh) = connection_graph->edges_counter;
+				sort_edge *m_sorted_edge = new sort_edge(connection_graph->edges_counter, internal_edge->cost);
+				connection_graph->sorted_edges.push_back(*m_sorted_edge);
 				connection_graph->edges_counter++;
 				workMesh.property(hprop_has_graph_edge, heh) = true;
 				workMesh.property(hprop_has_graph_edge, oheh) = true;
-				face_graph_edge_count++;
+				face_graph_edge_count++;				
 			}
 			else if(fhso.idx() == -1 ) {
 				border_count++;
@@ -297,6 +300,7 @@ void blossom_quad::do_blossom_algo() {
 		}
 	
 		workMesh.property(fprop_graph_edge_count, fh) = face_graph_edge_count;
+		//cout << "Face " << fh.idx() << " , edge_count " << face_graph_edge_count << endl;
 		// check edge count of faces;
 		if (workMesh.property(fprop_graph_edge_count, fh) == 0) {
 			int unmarked_edges = 0;
@@ -312,14 +316,312 @@ void blossom_quad::do_blossom_algo() {
 		}
 		
 		// save faces with only one edge
-		if (workMesh.property(fprop_graph_edge_count, fh)) {
+		if (workMesh.property(fprop_graph_edge_count, fh) == 1) {
 			faces_with_one_graph_edge.push_back(fh);
 		}
 	}
 
 	// create step one result mesh
+	// copy all points
+	int point_count = 0;
+	for (auto v_it = workMesh.vertices_begin(); v_it != workMesh.vertices_end(); ++v_it) {
+		PolyMesh::VertexHandle vh = *v_it;
+		blossomMesh_step1_vertex_vec.push_back(blossomMesh_step1.add_vertex(workMesh.point(vh)));
+		point_count++;
+	}
+	sort(connection_graph->sorted_edges.begin(), connection_graph->sorted_edges.end());
+	//connection_graph->print_sorted_edges();
 
-	connection_graph->print_graph();
+	// connect internal edges
+	int internal_edges_it = 0;
+	while (true) {
+		if (faces_with_one_graph_edge.size() != 0) {
+			PolyMesh::FaceHandle act_face = faces_with_one_graph_edge[0];
+			//cout << act_face.idx() << endl;
+			faces_with_one_graph_edge.erase(faces_with_one_graph_edge.begin());
+			for (auto fh_it = workMesh.fh_iter(act_face); fh_it.is_valid(); ++fh_it) {
+				PolyMesh::HalfedgeHandle heh = *fh_it;
+				if (!connection_graph->edges[workMesh.property(hprop_graph_edge_idx, heh)].bad && !connection_graph->edges[workMesh.property(hprop_graph_edge_idx, heh)].no_longer_available) {
+					blossomMesh_step1.add_face(connection_graph->edges[workMesh.property(hprop_graph_edge_idx, heh)].quad_vertices);
+					PolyMesh::FaceHandle face0 = connection_graph->edges[workMesh.property(hprop_graph_edge_idx, heh)].face0;
+					PolyMesh::FaceHandle face1 = connection_graph->edges[workMesh.property(hprop_graph_edge_idx, heh)].face1;
+					workMesh.property(fprop_graph_edge_count, face0)--;
+					workMesh.property(fprop_graph_edge_count, face1)--;
+					if (face0.idx() != act_face.idx()) {
+						for (auto other_fh_it = workMesh.fh_iter(face0); other_fh_it.is_valid(); ++other_fh_it) {
+							PolyMesh::HalfedgeHandle face0_heh = *other_fh_it;
+							if (!connection_graph->edges[workMesh.property(hprop_graph_edge_idx, face0_heh)].bad) {
+								connection_graph->edges[workMesh.property(hprop_graph_edge_idx, face0_heh)].no_longer_available = true;
+								PolyMesh::FaceHandle other_face0 = connection_graph->edges[workMesh.property(hprop_graph_edge_idx, face0_heh)].face0;
+								PolyMesh::FaceHandle other_face1 = connection_graph->edges[workMesh.property(hprop_graph_edge_idx, face0_heh)].face1;
+								if (other_face0.idx() != face0.idx()) {
+									workMesh.property(fprop_graph_edge_count, other_face0)--;
+									if (workMesh.property(fprop_graph_edge_count, other_face0) == 1) {
+										faces_with_one_graph_edge.push_back(other_face0);
+									}
+								}
+								else {
+									workMesh.property(fprop_graph_edge_count, other_face1)--;
+									if (workMesh.property(fprop_graph_edge_count, other_face1) == 1) {
+										faces_with_one_graph_edge.push_back(other_face1);
+									}
+								}
+							}	
+						}
+						for (auto fv_it = workMesh.fv_iter(face0); fv_it.is_valid(); ++fv_it) {
+							PolyMesh::VertexHandle face0_vit = *fv_it;
+							connection_graph->external_edges[workMesh.property(vprop_external_edge_idx, face0_vit)].no_longer_available = true;
+							PolyMesh::FaceHandle other_face0 = connection_graph->external_edges[workMesh.property(vprop_external_edge_idx, face0_vit)].face0;
+							PolyMesh::FaceHandle other_face1 = connection_graph->external_edges[workMesh.property(vprop_external_edge_idx, face0_vit)].face1;
+							if (other_face0.idx() != face0.idx()) {
+								workMesh.property(fprop_graph_edge_count, other_face0)--;
+								if (workMesh.property(fprop_graph_edge_count, other_face0) == 1) {
+									faces_with_one_graph_edge.push_back(other_face0);
+								}
+							}
+							else {
+								workMesh.property(fprop_graph_edge_count, other_face1)--;
+								if (workMesh.property(fprop_graph_edge_count, other_face1) == 1) {
+									faces_with_one_graph_edge.push_back(other_face1);
+								}
+							}
+						}
+					}
+					else {
+						for (auto other_fh_it = workMesh.fh_iter(face1); other_fh_it.is_valid(); ++other_fh_it) {
+							PolyMesh::HalfedgeHandle face1_heh = *other_fh_it;
+							if (!connection_graph->edges[workMesh.property(hprop_graph_edge_idx, face1_heh)].bad) {
+								connection_graph->edges[workMesh.property(hprop_graph_edge_idx, face1_heh)].no_longer_available = true;
+								PolyMesh::FaceHandle other_face0 = connection_graph->edges[workMesh.property(hprop_graph_edge_idx, face1_heh)].face0;
+								PolyMesh::FaceHandle other_face1 = connection_graph->edges[workMesh.property(hprop_graph_edge_idx, face1_heh)].face1;
+								if (other_face0.idx() != face1.idx()) {
+									workMesh.property(fprop_graph_edge_count, other_face0)--;
+									if (workMesh.property(fprop_graph_edge_count, other_face0) == 1) {
+										faces_with_one_graph_edge.push_back(other_face0);
+									}
+								}
+								else {
+									workMesh.property(fprop_graph_edge_count, other_face1)--;
+									if (workMesh.property(fprop_graph_edge_count, other_face1) == 1) {
+										faces_with_one_graph_edge.push_back(other_face1);
+									}
+								}
+							}	
+						}
+						for (auto fv_it = workMesh.fv_iter(face1); fv_it.is_valid(); ++fv_it) {
+							PolyMesh::VertexHandle face1_vit = *fv_it;
+							connection_graph->external_edges[workMesh.property(vprop_external_edge_idx, face1_vit)].no_longer_available = true;
+							PolyMesh::FaceHandle other_face0 = connection_graph->external_edges[workMesh.property(vprop_external_edge_idx, face1_vit)].face0;
+							PolyMesh::FaceHandle other_face1 = connection_graph->external_edges[workMesh.property(vprop_external_edge_idx, face1_vit)].face1;
+							if (other_face0.idx() != face1.idx()) {
+								workMesh.property(fprop_graph_edge_count, other_face0)--;
+								if (workMesh.property(fprop_graph_edge_count, other_face0) == 1) {
+									faces_with_one_graph_edge.push_back(other_face0);
+								}
+							}
+							else {
+								workMesh.property(fprop_graph_edge_count, other_face1)--;
+								if (workMesh.property(fprop_graph_edge_count, other_face1) == 1) {
+									faces_with_one_graph_edge.push_back(other_face1);
+								}
+							}
+						}
+					}
+				}
+			}
+			
+			for (auto fv_it = workMesh.fv_iter(act_face); fv_it.is_valid(); ++fv_it) {
+				PolyMesh::VertexHandle vh = *fv_it;
+				if ( !connection_graph->external_edges[workMesh.property(vprop_external_edge_idx, vh)].no_longer_available) {
+					connection_graph->external_edges[workMesh.property(vprop_external_edge_idx, vh)].to_be_used = true;
+					PolyMesh::FaceHandle face0 = connection_graph->external_edges[workMesh.property(vprop_external_edge_idx, vh)].face0;
+					PolyMesh::FaceHandle face1 = connection_graph->external_edges[workMesh.property(vprop_external_edge_idx, vh)].face1;
+					workMesh.property(fprop_graph_edge_count, face0)--;
+					workMesh.property(fprop_graph_edge_count, face1)--;
+					if (face0.idx() != act_face.idx()) {
+						for (auto other_fh_it = workMesh.fh_iter(face0); other_fh_it.is_valid(); ++other_fh_it) {
+							PolyMesh::HalfedgeHandle face0_heh = *other_fh_it;
+							if (!connection_graph->edges[workMesh.property(hprop_graph_edge_idx, face0_heh)].bad) {
+								connection_graph->edges[workMesh.property(hprop_graph_edge_idx, face0_heh)].no_longer_available = true;
+								PolyMesh::FaceHandle other_face0 = connection_graph->edges[workMesh.property(hprop_graph_edge_idx, face0_heh)].face0;
+								PolyMesh::FaceHandle other_face1 = connection_graph->edges[workMesh.property(hprop_graph_edge_idx, face0_heh)].face1;
+								if (other_face0.idx() != face0.idx()) {
+									workMesh.property(fprop_graph_edge_count, other_face0)--;
+									if (workMesh.property(fprop_graph_edge_count, other_face0) == 1) {
+										faces_with_one_graph_edge.push_back(other_face0);
+									}
+								}
+								else {
+									workMesh.property(fprop_graph_edge_count, other_face1)--;
+									if (workMesh.property(fprop_graph_edge_count, other_face1) == 1) {
+										faces_with_one_graph_edge.push_back(other_face1);
+									}
+								}
+							}
+						}
+						for (auto fv_it = workMesh.fv_iter(face0); fv_it.is_valid(); ++fv_it) {
+							PolyMesh::VertexHandle face0_vit = *fv_it;
+							connection_graph->external_edges[workMesh.property(vprop_external_edge_idx, face0_vit)].no_longer_available = true;
+							PolyMesh::FaceHandle other_face0 = connection_graph->external_edges[workMesh.property(vprop_external_edge_idx, face0_vit)].face0;
+							PolyMesh::FaceHandle other_face1 = connection_graph->external_edges[workMesh.property(vprop_external_edge_idx, face0_vit)].face1;
+							if (other_face0.idx() != face0.idx()) {
+								workMesh.property(fprop_graph_edge_count, other_face0)--;
+								if (workMesh.property(fprop_graph_edge_count, other_face0) == 1) {
+									faces_with_one_graph_edge.push_back(other_face0);
+								}
+							}
+							else {
+								workMesh.property(fprop_graph_edge_count, other_face1)--;
+								if (workMesh.property(fprop_graph_edge_count, other_face1) == 1) {
+									faces_with_one_graph_edge.push_back(other_face1);
+								}
+							}
+						}
+					}
+					else {
+						for (auto other_fh_it = workMesh.fh_iter(face1); other_fh_it.is_valid(); ++other_fh_it) {
+							PolyMesh::HalfedgeHandle face1_heh = *other_fh_it;
+							if (!connection_graph->edges[workMesh.property(hprop_graph_edge_idx, face1_heh)].bad) {
+								connection_graph->edges[workMesh.property(hprop_graph_edge_idx, face1_heh)].no_longer_available = true;
+								PolyMesh::FaceHandle other_face0 = connection_graph->edges[workMesh.property(hprop_graph_edge_idx, face1_heh)].face0;
+								PolyMesh::FaceHandle other_face1 = connection_graph->edges[workMesh.property(hprop_graph_edge_idx, face1_heh)].face1;
+								if (other_face0.idx() != face1.idx()) {
+									workMesh.property(fprop_graph_edge_count, other_face0)--;
+									if (workMesh.property(fprop_graph_edge_count, other_face0) == 1) {
+										faces_with_one_graph_edge.push_back(other_face0);
+									}
+								}
+								else {
+									workMesh.property(fprop_graph_edge_count, other_face1)--;
+									if (workMesh.property(fprop_graph_edge_count, other_face1) == 1) {
+										faces_with_one_graph_edge.push_back(other_face1);
+									}
+								}
+							}
+						}
+						for (auto fv_it = workMesh.fv_iter(face1); fv_it.is_valid(); ++fv_it) {
+							PolyMesh::VertexHandle face1_vit = *fv_it;
+							connection_graph->external_edges[workMesh.property(vprop_external_edge_idx, face1_vit)].no_longer_available = true;
+							PolyMesh::FaceHandle other_face0 = connection_graph->external_edges[workMesh.property(vprop_external_edge_idx, face1_vit)].face0;
+							PolyMesh::FaceHandle other_face1 = connection_graph->external_edges[workMesh.property(vprop_external_edge_idx, face1_vit)].face1;
+							if (other_face0.idx() != face1.idx()) {
+								workMesh.property(fprop_graph_edge_count, other_face0)--;
+								if (workMesh.property(fprop_graph_edge_count, other_face0) == 1) {
+									faces_with_one_graph_edge.push_back(other_face0);
+								}
+							}
+							else {
+								workMesh.property(fprop_graph_edge_count, other_face1)--;
+								if (workMesh.property(fprop_graph_edge_count, other_face1) == 1) {
+									faces_with_one_graph_edge.push_back(other_face1);
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		else {
+			graph_edge act_edge = connection_graph->edges[connection_graph->sorted_edges[internal_edges_it].m_orig_position];
+			if (!act_edge.no_longer_available && !act_edge.bad) {
+				blossomMesh_step1.add_face(act_edge.quad_vertices);
+				PolyMesh::FaceHandle face0 = act_edge.face0;
+				PolyMesh::FaceHandle face1 = act_edge.face1;
+				workMesh.property(fprop_graph_edge_count, face0)--;
+				workMesh.property(fprop_graph_edge_count, face1)--;
+				
+				for (auto other_fh_it = workMesh.fh_iter(face0); other_fh_it.is_valid(); ++other_fh_it) {
+					PolyMesh::HalfedgeHandle face0_heh = *other_fh_it;
+					if (!connection_graph->edges[workMesh.property(hprop_graph_edge_idx, face0_heh)].bad) {
+						connection_graph->edges[workMesh.property(hprop_graph_edge_idx, face0_heh)].no_longer_available = true;
+						PolyMesh::FaceHandle other_face0 = connection_graph->edges[workMesh.property(hprop_graph_edge_idx, face0_heh)].face0;
+						PolyMesh::FaceHandle other_face1 = connection_graph->edges[workMesh.property(hprop_graph_edge_idx, face0_heh)].face1;
+						if (other_face0.idx() != face0.idx()) {
+							workMesh.property(fprop_graph_edge_count, other_face0)--;
+							if (workMesh.property(fprop_graph_edge_count, other_face0) == 1) {
+								faces_with_one_graph_edge.push_back(other_face0);
+							}
+						}
+						else {
+							workMesh.property(fprop_graph_edge_count, other_face1)--;
+							if (workMesh.property(fprop_graph_edge_count, other_face1) == 1) {
+								faces_with_one_graph_edge.push_back(other_face1);
+							}
+						}
+					}
+				}
+				for (auto fv_it = workMesh.fv_iter(face0); fv_it.is_valid(); ++fv_it) {
+					PolyMesh::VertexHandle face0_vit = *fv_it;
+					connection_graph->external_edges[workMesh.property(vprop_external_edge_idx, face0_vit)].no_longer_available = true;
+					PolyMesh::FaceHandle other_face0 = connection_graph->external_edges[workMesh.property(vprop_external_edge_idx, face0_vit)].face0;
+					PolyMesh::FaceHandle other_face1 = connection_graph->external_edges[workMesh.property(vprop_external_edge_idx, face0_vit)].face1;
+					if (other_face0.idx() != face0.idx()) {
+						workMesh.property(fprop_graph_edge_count, other_face0)--;
+						if (workMesh.property(fprop_graph_edge_count, other_face0) == 1) {
+							faces_with_one_graph_edge.push_back(other_face0);
+						}
+					}
+					else {
+						workMesh.property(fprop_graph_edge_count, other_face1)--;
+						if (workMesh.property(fprop_graph_edge_count, other_face1) == 1) {
+							faces_with_one_graph_edge.push_back(other_face1);
+						}
+					}
+				}
+				
+				
+				for (auto other_fh_it = workMesh.fh_iter(face1); other_fh_it.is_valid(); ++other_fh_it) {
+					PolyMesh::HalfedgeHandle face1_heh = *other_fh_it;
+					if (!connection_graph->edges[workMesh.property(hprop_graph_edge_idx, face1_heh)].bad) {
+						connection_graph->edges[workMesh.property(hprop_graph_edge_idx, face1_heh)].no_longer_available = true;
+						PolyMesh::FaceHandle other_face0 = connection_graph->edges[workMesh.property(hprop_graph_edge_idx, face1_heh)].face0;
+						PolyMesh::FaceHandle other_face1 = connection_graph->edges[workMesh.property(hprop_graph_edge_idx, face1_heh)].face1;
+						if (other_face0.idx() != face1.idx()) {
+							workMesh.property(fprop_graph_edge_count, other_face0)--;
+							if (workMesh.property(fprop_graph_edge_count, other_face0) == 1) {
+								faces_with_one_graph_edge.push_back(other_face0);
+							}
+						}
+						else {
+							workMesh.property(fprop_graph_edge_count, other_face1)--;
+							if (workMesh.property(fprop_graph_edge_count, other_face1) == 1) {
+								faces_with_one_graph_edge.push_back(other_face1);
+							}
+						}
+					}
+				}
+				for (auto fv_it = workMesh.fv_iter(face1); fv_it.is_valid(); ++fv_it) {
+					PolyMesh::VertexHandle face1_vit = *fv_it;
+					connection_graph->external_edges[workMesh.property(vprop_external_edge_idx, face1_vit)].no_longer_available = true;
+					PolyMesh::FaceHandle other_face0 = connection_graph->external_edges[workMesh.property(vprop_external_edge_idx, face1_vit)].face0;
+					PolyMesh::FaceHandle other_face1 = connection_graph->external_edges[workMesh.property(vprop_external_edge_idx, face1_vit)].face1;
+					if (other_face0.idx() != face1.idx()) {
+						workMesh.property(fprop_graph_edge_count, other_face0)--;
+						if (workMesh.property(fprop_graph_edge_count, other_face0) == 1) {
+							faces_with_one_graph_edge.push_back(other_face0);
+						}
+					}
+					else {
+						workMesh.property(fprop_graph_edge_count, other_face1)--;
+						if (workMesh.property(fprop_graph_edge_count, other_face1) == 1) {
+							faces_with_one_graph_edge.push_back(other_face1);
+						}
+					}
+				}				
+			}
+			internal_edges_it++;
+		}
+		if (faces_with_one_graph_edge.size() == 0 && internal_edges_it == connection_graph->edges_counter) {
+			break;
+		}
+	}
+	OpenMesh::IO::write_mesh(blossomMesh_step1, "Created_Meshes/blossomMesh_step1.off");
+
+	// connect external edges with edge duplication
+
+	// conenct extenal edges with vertex swap
+
+	// connection_graph->print_graph();
 
 
 }
