@@ -45,4 +45,6 @@ private:
 	float vec_length(glm::vec3 vector1);
 
 	bool is_bad_edge(PolyMesh::VertexHandle vertex1, PolyMesh::VertexHandle vertex2);
+
+	void remove_unnecessary_vertices();
 };

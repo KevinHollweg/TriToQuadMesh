@@ -737,6 +737,38 @@ void blossom_quad::do_blossom_algo() {
 	OpenMesh::IO::write_mesh(blossomMesh_step1, "Created_Meshes/blossomMesh_step1.off");
 
 	// conenct extenal edges with edge swap
+	for (int i = 0; i < connection_graph->external_edges_counter; i++) {
+		if (connection_graph->external_edges[i].use_vertex_duplication && connection_graph->external_edges[i].to_be_used) {
+			PolyMesh::VertexHandle con_vert = connection_graph->external_edges[i].connecting_vertex;
+			PolyMesh::FaceHandle old_face0 = connection_graph->external_edges[i].face0;
+			PolyMesh::FaceHandle old_face1 = connection_graph->external_edges[i].face1;
+			PolyMesh::FaceHandle new_face;
+			PolyMesh::VertexHandle old_vert_1;
+			PolyMesh::VertexHandle old_vert_2;
+			PolyMesh::VertexHandle quad_vert_1;
+			PolyMesh::VertexHandle quad_vert_2;
+			PolyMesh::VertexHandle quad_corner;
+			// get face from new mesh
+
+			// delete old face
+			blossomMesh_step1.request_face_status();
+			blossomMesh_step1.delete_face(new_face, false);
+			blossomMesh_step1.garbage_collection();
+
+			// add new faces
+			blossomMesh_step1.request_face_status();
+			blossomMesh_step1.add_face({ old_vert_1, quad_vert_1, quad_corner, con_vert });
+			blossomMesh_step1.request_face_status();
+			blossomMesh_step1.add_face({ con_vert, quad_corner, quad_vert_2, old_vert_2 });
+		}
+	}
+
+	OpenMesh::IO::write_mesh(blossomMesh_step1, "Created_Meshes/blossomMesh_step2.off");
+
+	// remove unnecessary vertices 
+	remove_unnecessary_vertices();
+
+	OpenMesh::IO::write_mesh(blossomMesh_step1, "Created_Meshes/blossomMesh_step3.off");
 
 	// connection_graph->print_graph();
 
@@ -845,19 +877,10 @@ float blossom_quad::quality_function(std::vector<PolyMesh::VertexHandle> quad_ve
 
 vector<PolyMesh::VertexHandle> blossom_quad::connect_triangles(int face0, int face1) {
 	// join two faces into a quad face
-	//cout << face0 << "; " << face1 << endl;
-	//PolyMesh smallQuadMesh;
-	vector<PolyMesh::VertexHandle> sqmVec(4);
+
 	set<int> already_pushed_vertices;
 	PolyMesh::FaceHandle fh0 = workMesh.face_handle(face0);
 	PolyMesh::FaceHandle fh1 = workMesh.face_handle(face1);
-
-	// push all vertices into the quad mesh
-	//for (auto v_it = smallMesh.vertices_begin(); v_it != smallMesh.vertices_end(); ++v_it) {
-	//	TriMesh::VertexHandle vh = *v_it;
-	//	sqmVec[vh.idx()] = smallQuadMesh.add_vertex(smallMesh.point(vh));
-	//	already_pushed_vertices.insert(vh.idx());
-	//}
 
 	vector<PolyMesh::VertexHandle> face_vhandles;
 	// how many vertices of face 0 are already pushed
@@ -865,7 +888,6 @@ vector<PolyMesh::VertexHandle> blossom_quad::connect_triangles(int face0, int fa
 	// the last pushed vertex of face 0
 	int last_vert = 0;
 
-	//cout << "first triangle" << endl;
 	//go through first triangle, check every half edge
 	for (auto fh_it = workMesh.fh_iter(fh0); fh_it.is_valid(); ++fh_it) {
 		PolyMesh::HalfedgeHandle heh_t1 = *fh_it;
@@ -874,10 +896,9 @@ vector<PolyMesh::VertexHandle> blossom_quad::connect_triangles(int face0, int fa
 		// push from vertex of active halfedge into vertex handle vector
 		PolyMesh::VertexHandle fvhs = workMesh.from_vertex_handle(heh_t1);
 		last_vert = fvhs.idx();
-		//cout << last_vert << endl;
+
 		face_vhandles.push_back(workMesh.vertex_handle(last_vert));
 		v_face_0++;
-		//cout << last_vert << endl;
 
 		// check if active halfedge is connecting one, if yes, break
 		PolyMesh::FaceHandle fhso = workMesh.opposite_face_handle(heh_t1);
@@ -885,15 +906,9 @@ vector<PolyMesh::VertexHandle> blossom_quad::connect_triangles(int face0, int fa
 		if (fhso.idx() == face1) {
 			break;
 		}
-		//TriMesh::VertexHandle fvhs = smallMesh.from_vertex_handle(heh);
-		//TriMesh::VertexHandle tvhs = smallMesh.to_vertex_handle(heh);
-
 	}
-	//cout << "faces from first triangle" << v_face_0 << endl;
 
-	//cout << "second triangle" << endl;
 	//go through second triangle, check every half edge
-	//cout << "last pushed vertex " << last_vert << endl;
 	for (auto fh_it = workMesh.fh_iter(fh1); fh_it.is_valid(); ++fh_it) {
 		PolyMesh::HalfedgeHandle heh_t2 = *fh_it;
 
@@ -915,12 +930,9 @@ vector<PolyMesh::VertexHandle> blossom_quad::connect_triangles(int face0, int fa
 		else {
 			// if neither to nor from vertex is alredy pushed, push from vertex
 			face_vhandles.push_back(workMesh.vertex_handle(akt_from_vert));
-			//cout << akt_from_vert << endl;
-			//face_vhandles.push_back(smallMesh.vertex_handle(akt_from_vert));
 		}
 	}
 	// push remaining vertices of first triangle 
-	//cout << "last triangle" << endl;
 	for (auto fh_it = workMesh.fh_iter(fh0); fh_it.is_valid(); ++fh_it) {
 		PolyMesh::HalfedgeHandle heh = *fh_it;
 		if (v_face_0 != 0) {
@@ -931,7 +943,6 @@ vector<PolyMesh::VertexHandle> blossom_quad::connect_triangles(int face0, int fa
 		else {
 			PolyMesh::VertexHandle fvhs = workMesh.from_vertex_handle(heh);
 			face_vhandles.push_back(workMesh.vertex_handle(fvhs.idx()));
-			//cout << fvhs.idx() << endl;
 		}
 	}
 
@@ -951,6 +962,96 @@ bool blossom_quad::is_bad_edge(PolyMesh::VertexHandle vertex1, PolyMesh::VertexH
 	}
 	else {
 		return false;
+	}
+}
+
+void blossom_quad::remove_unnecessary_vertices() {
+
+	for (PolyMesh::VertexIter v_it = blossomMesh_step1.vertices_begin(); v_it != blossomMesh_step1.vertices_end(); ++v_it) {
+		PolyMesh::VertexHandle vh = *v_it;
+		int idx_unnecessary_vert = 0;
+		int number_of_neighbours = 0;
+		int idx_neighbour0 = 0;
+		int idx_neighbour1 = 0;
+		bool is_no_border = true;
+		int idx_neighbour_face0 = -1;
+		int idx_neighbour_face1 = -1;
+		for (auto voh_it = blossomMesh_step1.voh_iter(vh); voh_it.is_valid(); ++voh_it) {
+			PolyMesh::HalfedgeHandle heh = *voh_it;
+			PolyMesh::VertexHandle neighbour = blossomMesh_step1.to_vertex_handle(heh);
+			PolyMesh::FaceHandle n_face = blossomMesh_step1.face_handle(heh);
+			number_of_neighbours++;
+			if (number_of_neighbours == 1) {
+				idx_neighbour0 = neighbour.idx();
+				idx_neighbour_face0 = n_face.idx();
+			}
+			else if (number_of_neighbours == 2) {
+				idx_neighbour1 = neighbour.idx();
+				idx_neighbour_face1 = n_face.idx();
+			}
+			else {
+				idx_neighbour0 = 0;
+				idx_neighbour1 = 0;
+			}
+			if (n_face.idx() == -1) {
+				is_no_border = false;
+			}
+		}
+		if ( (number_of_neighbours == 2) && is_no_border ) {
+			//cout << vh.idx() << endl;
+			idx_unnecessary_vert = vh.idx();
+			PolyMesh::FaceHandle fh0 = blossomMesh_step1.face_handle(idx_neighbour_face0);
+			PolyMesh::FaceHandle fh1 = blossomMesh_step1.face_handle(idx_neighbour_face1);
+
+			vector<PolyMesh::VertexHandle> face_vhandles;
+			int v_face_0 = 0;
+			//go through first triangle, check every half edge
+			for (auto fh_it = blossomMesh_step1.fh_iter(fh0); fh_it.is_valid(); ++fh_it) {
+				PolyMesh::HalfedgeHandle heh_q1 = *fh_it;
+				PolyMesh::VertexHandle from_vert = blossomMesh_step1.from_vertex_handle(heh_q1);
+				if (from_vert.idx() == idx_unnecessary_vert) {
+					break;
+				}
+				face_vhandles.push_back(from_vert);
+				v_face_0++;	
+			}
+			for (auto fh_it = blossomMesh_step1.fh_iter(fh1); fh_it.is_valid(); ++fh_it) {
+				PolyMesh::HalfedgeHandle heh_q2 = *fh_it;
+				PolyMesh::VertexHandle from_vert = blossomMesh_step1.from_vertex_handle(heh_q2);
+				int from_vert_idx = from_vert.idx();
+				if (from_vert_idx != idx_neighbour0 && from_vert_idx != idx_neighbour1 && from_vert_idx != idx_unnecessary_vert) {
+					face_vhandles.push_back(from_vert);
+					v_face_0++;
+				}
+			}
+			for (auto fh_it = blossomMesh_step1.fh_iter(fh0); fh_it.is_valid(); ++fh_it) {
+				PolyMesh::HalfedgeHandle heh = *fh_it;
+				if (v_face_0 != 0) {
+					// skip all already pushed vertices
+					v_face_0--;
+					continue;
+				}
+				else {
+					PolyMesh::VertexHandle fvhs = blossomMesh_step1.from_vertex_handle(heh);
+					face_vhandles.push_back(fvhs);
+				}
+			}
+			for (int i = 0; i < 4; i++) {
+				cout << face_vhandles[i].idx() << endl;
+			}
+			// remove obsolete faces
+			blossomMesh_step1.request_face_status();
+			blossomMesh_step1.delete_face(fh0, false);
+			blossomMesh_step1.request_face_status();
+			blossomMesh_step1.delete_face(fh1, false);
+			// add new face
+			blossomMesh_step1.request_face_status();
+			blossomMesh_step1.add_face(face_vhandles);
+			// remove unnecessary vertex
+			blossomMesh_step1.request_vertex_status();
+			blossomMesh_step1.delete_vertex(vh, false);
+			blossomMesh_step1.garbage_collection();
+		}
 	}
 }
 
