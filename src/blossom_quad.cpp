@@ -737,18 +737,54 @@ void blossom_quad::do_blossom_algo() {
 	OpenMesh::IO::write_mesh(blossomMesh_step1, "Created_Meshes/blossomMesh_step1.off");
 
 	// conenct extenal edges with edge swap
-	for (int i = 0; i < connection_graph->external_edges_counter; i++) {
-		if (connection_graph->external_edges[i].use_vertex_duplication && connection_graph->external_edges[i].to_be_used) {
+	for (int i = 0; i < connection_graph->external_edges_counter; i++) {	
+		if (connection_graph->external_edges[i].use_edge_swap && connection_graph->external_edges[i].to_be_used) {
 			PolyMesh::VertexHandle con_vert = connection_graph->external_edges[i].connecting_vertex;
-			PolyMesh::FaceHandle old_face0 = connection_graph->external_edges[i].face0;
-			PolyMesh::FaceHandle old_face1 = connection_graph->external_edges[i].face1;
+			PolyMesh::FaceHandle old_face1 = connection_graph->external_edges[i].face0;
+			PolyMesh::FaceHandle old_face2 = connection_graph->external_edges[i].face1;
 			PolyMesh::FaceHandle new_face;
 			PolyMesh::VertexHandle old_vert_1;
 			PolyMesh::VertexHandle old_vert_2;
 			PolyMesh::VertexHandle quad_vert_1;
 			PolyMesh::VertexHandle quad_vert_2;
 			PolyMesh::VertexHandle quad_corner;
-			// get face from new mesh
+
+			// get face from new mesh, and get vertex handles from new mesh
+			int edge_index = 0;
+			for (auto voh_it_blossom = blossomMesh_step1.voh_iter(con_vert); voh_it_blossom.is_valid(); ++voh_it_blossom) {
+				edge_index++;
+				PolyMesh::HalfedgeHandle heh_new = *voh_it_blossom;
+				if (edge_index == 1) {
+					quad_vert_1 = blossomMesh_step1.to_vertex_handle(heh_new);
+					new_face = blossomMesh_step1.face_handle(heh_new);
+				}
+				else if (edge_index == 2) {
+					quad_vert_2 = blossomMesh_step1.to_vertex_handle(heh_new);
+				}
+				else {
+					cout << "Error in edge swap" << endl;
+				}
+			}
+			// get vertex handles from old mesh
+			for (auto voh_it_work = workMesh.voh_iter(con_vert); voh_it_work.is_valid(); ++voh_it_work) {
+				PolyMesh::HalfedgeHandle heh_old = *voh_it_work;
+				PolyMesh::FaceHandle fh = workMesh.face_handle(heh_old);
+				PolyMesh::FaceHandle opposit_fh = workMesh.opposite_face_handle(heh_old);
+				if (fh.idx() == -1) {
+					old_vert_2 = workMesh.to_vertex_handle(heh_old);
+				}
+				else if (opposit_fh.idx() == -1) {
+					old_vert_1 = workMesh.to_vertex_handle(heh_old);
+				}
+			}
+			// get quad corner opposit to connecting vertex
+			for (auto fh_it = blossomMesh_step1.fh_iter(new_face); fh_it.is_valid(); fh_it++) {
+				PolyMesh::HalfedgeHandle heh_new = *fh_it;
+				PolyMesh::VertexHandle vh_new = blossomMesh_step1.from_vertex_handle(heh_new);
+				if ( (vh_new.idx() != con_vert.idx()) && (vh_new.idx() != quad_vert_1.idx()) && (vh_new.idx() != quad_vert_2.idx()) ) {
+					quad_corner = vh_new;
+				}
+			}
 
 			// delete old face
 			blossomMesh_step1.request_face_status();
@@ -765,10 +801,19 @@ void blossom_quad::do_blossom_algo() {
 
 	OpenMesh::IO::write_mesh(blossomMesh_step1, "Created_Meshes/blossomMesh_step2.off");
 
+	// vertex smoothing
+
+	OpenMesh::IO::write_mesh(blossomMesh_step1, "Created_Meshes/blossomMesh_step3.off");
+
 	// remove unnecessary vertices 
 	remove_unnecessary_vertices();
 
-	OpenMesh::IO::write_mesh(blossomMesh_step1, "Created_Meshes/blossomMesh_step3.off");
+	OpenMesh::IO::write_mesh(blossomMesh_step1, "Created_Meshes/blossomMesh_step4.off");
+
+	// remove unnecessary faces
+	remove_unnecessary_faces();
+
+	OpenMesh::IO::write_mesh(blossomMesh_step1, "Created_Meshes/blossomMesh_step5.off");
 
 	// connection_graph->print_graph();
 
@@ -1036,9 +1081,7 @@ void blossom_quad::remove_unnecessary_vertices() {
 					face_vhandles.push_back(fvhs);
 				}
 			}
-			for (int i = 0; i < 4; i++) {
-				cout << face_vhandles[i].idx() << endl;
-			}
+
 			// remove obsolete faces
 			blossomMesh_step1.request_face_status();
 			blossomMesh_step1.delete_face(fh0, false);
@@ -1053,6 +1096,11 @@ void blossom_quad::remove_unnecessary_vertices() {
 			blossomMesh_step1.garbage_collection();
 		}
 	}
+}
+
+void blossom_quad::remove_unnecessary_faces() {
+	PolyMesh delete_face_test_mesh;
+	std::vector<PolyMesh::VertexHandle> delete_face_test_mesh_Vec(10);
 }
 
 float blossom_quad::scalar_product(glm::vec3 vector1, vec3 vector2) {

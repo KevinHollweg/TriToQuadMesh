@@ -47,4 +47,6 @@ private:
 	bool is_bad_edge(PolyMesh::VertexHandle vertex1, PolyMesh::VertexHandle vertex2);
 
 	void remove_unnecessary_vertices();
+
+	void remove_unnecessary_faces();
 };
