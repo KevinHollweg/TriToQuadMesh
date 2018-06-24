@@ -811,7 +811,7 @@ void blossom_quad::do_blossom_algo() {
 	OpenMesh::IO::write_mesh(blossomMesh_step1, "Created_Meshes/blossomMesh_step4.off");
 
 	// remove unnecessary faces
-	remove_unnecessary_faces();
+	point_count = remove_unnecessary_faces(point_count);
 
 	OpenMesh::IO::write_mesh(blossomMesh_step1, "Created_Meshes/blossomMesh_step5.off");
 
@@ -1098,9 +1098,175 @@ void blossom_quad::remove_unnecessary_vertices() {
 	}
 }
 
-void blossom_quad::remove_unnecessary_faces() {
+int blossom_quad::remove_unnecessary_faces(int point_count) {
+	int temp_point_count = 10;//point_count;
 	PolyMesh delete_face_test_mesh;
 	std::vector<PolyMesh::VertexHandle> delete_face_test_mesh_Vec(10);
+	delete_face_test_mesh_Vec[0] = delete_face_test_mesh.add_vertex(PolyMesh::Point(0, 0, 0));
+	delete_face_test_mesh_Vec[1] = delete_face_test_mesh.add_vertex(PolyMesh::Point(2, 0, 0));
+	delete_face_test_mesh_Vec[2] = delete_face_test_mesh.add_vertex(PolyMesh::Point(4, 0, 0));
+	delete_face_test_mesh_Vec[3] = delete_face_test_mesh.add_vertex(PolyMesh::Point(0, 1, 0));
+	delete_face_test_mesh_Vec[4] = delete_face_test_mesh.add_vertex(PolyMesh::Point(1, 1, 0));
+	delete_face_test_mesh_Vec[5] = delete_face_test_mesh.add_vertex(PolyMesh::Point(3, 1, 0));
+	delete_face_test_mesh_Vec[6] = delete_face_test_mesh.add_vertex(PolyMesh::Point(4, 1, 0));
+	delete_face_test_mesh_Vec[7] = delete_face_test_mesh.add_vertex(PolyMesh::Point(0, 2, 0));
+	delete_face_test_mesh_Vec[8] = delete_face_test_mesh.add_vertex(PolyMesh::Point(2, 2, 0));
+	delete_face_test_mesh_Vec[9] = delete_face_test_mesh.add_vertex(PolyMesh::Point(4, 2, 0));
+
+	delete_face_test_mesh.add_face({ delete_face_test_mesh_Vec[0], delete_face_test_mesh_Vec[1], delete_face_test_mesh_Vec[4], delete_face_test_mesh_Vec[3] });
+	delete_face_test_mesh.add_face({ delete_face_test_mesh_Vec[1], delete_face_test_mesh_Vec[2], delete_face_test_mesh_Vec[6], delete_face_test_mesh_Vec[5] });
+	delete_face_test_mesh.add_face({ delete_face_test_mesh_Vec[3], delete_face_test_mesh_Vec[4], delete_face_test_mesh_Vec[8], delete_face_test_mesh_Vec[7] });
+	delete_face_test_mesh.add_face({ delete_face_test_mesh_Vec[5], delete_face_test_mesh_Vec[6], delete_face_test_mesh_Vec[9], delete_face_test_mesh_Vec[8] });
+	delete_face_test_mesh.add_face({ delete_face_test_mesh_Vec[1], delete_face_test_mesh_Vec[5], delete_face_test_mesh_Vec[8], delete_face_test_mesh_Vec[4] });
+
+	OpenMesh::IO::write_mesh(delete_face_test_mesh, "Created_Meshes/delete_face_test_mesh_raw.off");
+	// faces to delete
+	vector<PolyMesh::FaceHandle> old_faces;
+	int number_of_old_faces = 0;
+	vector<vector<PolyMesh::VertexHandle>> new_faces;
+	int number_of_new_faces = 0;
+
+
+	for (PolyMesh::FaceIter f_it = delete_face_test_mesh.faces_begin(); f_it != delete_face_test_mesh.faces_end(); ++f_it) {
+		PolyMesh::FaceHandle fh = *f_it;
+		vector<int> vertex_neighours;
+		vector<PolyMesh::VertexHandle> face_vertices;
+
+		// go through all vertices on a face, to find out their neighbour number
+		for (auto fv_it = delete_face_test_mesh.fv_iter(fh); fv_it.is_valid(); ++fv_it) {
+			PolyMesh::VertexHandle vh = *fv_it;
+			face_vertices.push_back(vh);
+			int vertex_n = 0;
+			// count neighbour vertices
+			for (auto voh_it = delete_face_test_mesh.voh_iter(vh); voh_it.is_valid(); ++voh_it) {
+				PolyMesh::HalfedgeHandle heh = *voh_it;
+				PolyMesh::FaceHandle ges_fh = delete_face_test_mesh.face_handle(heh);
+				if (ges_fh.idx() == -1) {
+					vertex_n = -1;
+					break;					
+				}
+				else {
+					vertex_n++;
+				}
+			}
+			vertex_neighours.push_back(vertex_n);
+		}
+		//cout << "face ID " << fh.idx() << endl;
+		//for (int i = 0; i < 4; i++) {
+		//	cout << "vertex " << face_vertices[i].idx() << " has " << vertex_neighours[i] << " neighbours" << endl;
+		//}
+		if ((vertex_neighours[0] == 3) && (vertex_neighours[2] == 3)) {
+			vec3 *point0 = new vec3(delete_face_test_mesh.point(face_vertices[0])[0], delete_face_test_mesh.point(face_vertices[0])[1], delete_face_test_mesh.point(face_vertices[0])[2]);
+			vec3 *point1 = new vec3(delete_face_test_mesh.point(face_vertices[2])[0], delete_face_test_mesh.point(face_vertices[2])[1], delete_face_test_mesh.point(face_vertices[2])[2]);
+
+			vec3 vec10 = *point1 - *point0;
+			vec3 *new_point = new vec3(point0->x + 0.5 * vec10.x, point0->y + 0.5 * vec10.y, point0->z + 0.5 * vec10.z);
+			delete_face_test_mesh_Vec.push_back(delete_face_test_mesh.add_vertex(PolyMesh::Point(new_point->x, new_point->y, new_point->z)));
+			int index_of_new_point = temp_point_count;
+			temp_point_count++;
+
+			// get indices of surrounding faces
+
+			old_faces.push_back(fh);
+			number_of_old_faces++;
+			for (auto voh_it = delete_face_test_mesh.voh_iter(face_vertices[0]); voh_it.is_valid(); ++voh_it) {
+				PolyMesh::HalfedgeHandle heh = *voh_it;
+				PolyMesh::FaceHandle ges_fh = delete_face_test_mesh.face_handle(heh);
+				if (ges_fh.idx() != fh.idx()) {
+					old_faces.push_back(ges_fh);
+					number_of_old_faces++;
+				}
+			}
+			for (auto voh_it = delete_face_test_mesh.voh_iter(face_vertices[2]); voh_it.is_valid(); ++voh_it) {
+				PolyMesh::HalfedgeHandle heh = *voh_it;
+				PolyMesh::FaceHandle ges_fh = delete_face_test_mesh.face_handle(heh);
+				if (ges_fh.idx() != fh.idx()) {
+					old_faces.push_back(ges_fh);
+					number_of_old_faces++;
+				}
+			}
+
+			for (int i = 0; i < 5; i++) {
+				//cout << old_faces[i].idx() << endl;
+				vector<PolyMesh::VertexHandle> new_face;
+				if (old_faces[number_of_old_faces - 5 + i].idx() != fh.idx()) {
+					for (auto old_fv_it = delete_face_test_mesh.fv_iter(old_faces[number_of_old_faces - 5 + i]); old_fv_it.is_valid(); ++old_fv_it) {
+						PolyMesh::VertexHandle old_vh = *old_fv_it;
+						if ((old_vh.idx() == face_vertices[0].idx()) || (old_vh.idx() == face_vertices[2].idx())) {
+							new_face.push_back(delete_face_test_mesh_Vec[index_of_new_point]);
+						}
+						else {
+							new_face.push_back(old_vh);
+						}
+					}
+					new_faces.push_back(new_face);
+					number_of_new_faces++;
+				}
+			}
+		}
+		else if ((vertex_neighours[1] == 3) && (vertex_neighours[3] == 3)) {
+			vec3 *point0 = new vec3(delete_face_test_mesh.point(face_vertices[1])[0], delete_face_test_mesh.point(face_vertices[1])[1], delete_face_test_mesh.point(face_vertices[1])[2]);
+			vec3 *point1 = new vec3(delete_face_test_mesh.point(face_vertices[3])[0], delete_face_test_mesh.point(face_vertices[3])[1], delete_face_test_mesh.point(face_vertices[3])[2]);
+
+			vec3 vec10 = *point1 - *point0;
+			vec3 *new_point = new vec3(point0->x + 0.5 * vec10.x, point0->y + 0.5 * vec10.y, point0->z + 0.5 * vec10.z);
+			delete_face_test_mesh_Vec.push_back(delete_face_test_mesh.add_vertex(PolyMesh::Point(new_point->x, new_point->y, new_point->z)));
+			int index_of_new_point = temp_point_count;
+			temp_point_count++;
+
+			// get indices of surrounding faces
+			
+			old_faces.push_back(fh);
+			number_of_old_faces++;
+			for (auto voh_it = delete_face_test_mesh.voh_iter(face_vertices[1]); voh_it.is_valid(); ++voh_it) {
+				PolyMesh::HalfedgeHandle heh = *voh_it;
+				PolyMesh::FaceHandle ges_fh = delete_face_test_mesh.face_handle(heh);
+				if (ges_fh.idx() != fh.idx()) {
+					old_faces.push_back(ges_fh);
+					number_of_old_faces++;
+				}
+			}
+			for (auto voh_it = delete_face_test_mesh.voh_iter(face_vertices[3]); voh_it.is_valid(); ++voh_it) {
+				PolyMesh::HalfedgeHandle heh = *voh_it;
+				PolyMesh::FaceHandle ges_fh = delete_face_test_mesh.face_handle(heh);
+				if (ges_fh.idx() != fh.idx()) {
+					old_faces.push_back(ges_fh);
+					number_of_old_faces++;
+				}
+			}
+			
+			for (int i = 0; i < 5; i++) {
+				//cout << old_faces[i].idx() << endl;
+				vector<PolyMesh::VertexHandle> new_face;
+				if (old_faces[number_of_old_faces - 5 + i].idx() != fh.idx()) {
+					for (auto old_fv_it = delete_face_test_mesh.fv_iter(old_faces[number_of_old_faces - 5 + i]); old_fv_it.is_valid(); ++old_fv_it) {
+						PolyMesh::VertexHandle old_vh = *old_fv_it;
+						if ((old_vh.idx() == face_vertices[1].idx()) || (old_vh.idx() == face_vertices[3].idx())) {
+							new_face.push_back(delete_face_test_mesh_Vec[index_of_new_point]);
+						}
+						else {
+							new_face.push_back(old_vh);
+						}
+					}
+					new_faces.push_back(new_face);
+					number_of_new_faces++;
+				}	
+			}			
+		}
+	}
+	for (int k = 0; k < number_of_old_faces; k++) {
+		cout << old_faces[k].idx() << endl;
+		delete_face_test_mesh.request_face_status();
+		delete_face_test_mesh.delete_face(old_faces[k], false);
+	}
+	for (int l = 0; l < number_of_new_faces; l++) {
+		delete_face_test_mesh.request_face_status();
+		delete_face_test_mesh.add_face(new_faces[l]);
+	}
+	delete_face_test_mesh.garbage_collection();
+	OpenMesh::IO::write_mesh(delete_face_test_mesh, "Created_Meshes/delete_face_test_mesh.off");
+
+	return temp_point_count;
 }
 
 float blossom_quad::scalar_product(glm::vec3 vector1, vec3 vector2) {

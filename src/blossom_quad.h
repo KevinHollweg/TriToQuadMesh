@@ -48,5 +48,5 @@ private:
 
 	void remove_unnecessary_vertices();
 
-	void remove_unnecessary_faces();
+	int remove_unnecessary_faces(int point_count);
 };
