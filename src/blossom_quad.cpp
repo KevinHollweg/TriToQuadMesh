@@ -17,6 +17,9 @@ vector<PolyMesh::FaceHandle> faces_with_one_graph_edge;
 
 bool debug = false;
 
+PolyMesh blossomMesh_refined;
+//std::vector<PolyMesh::VertexHandle> rvVec;
+
 
 void blossom_quad::do_blossom_algo() {
 	// create work mesh, will later be changed
@@ -817,7 +820,9 @@ void blossom_quad::do_blossom_algo() {
 
 	// connection_graph->print_graph();
 
+	refine_mesh();
 
+	OpenMesh::IO::write_mesh(blossomMesh_refined, "Created_Meshes/blossomMesh_refined.off");
 }
 
 void blossom_quad::create_test_mesh() {
@@ -1255,7 +1260,7 @@ int blossom_quad::remove_unnecessary_faces(int point_count) {
 		}
 	}
 	for (int k = 0; k < number_of_old_faces; k++) {
-		cout << old_faces[k].idx() << endl;
+		//cout << old_faces[k].idx() << endl;
 		delete_face_test_mesh.request_face_status();
 		delete_face_test_mesh.delete_face(old_faces[k], false);
 	}
@@ -1275,4 +1280,114 @@ float blossom_quad::scalar_product(glm::vec3 vector1, vec3 vector2) {
 
 float blossom_quad::vec_length(vec3 vector1) {
 	return sqrt(((float)vector1[0]) * ((float)vector1[0]) + ((float)vector1[1]) * ((float)vector1[1]) + ((float)vector1[2]) * ((float)vector1[2]));
+}
+
+void blossom_quad::refine_mesh() {
+
+	int point_counter = 0;
+
+	std::vector<PolyMesh::VertexHandle> resultVhVec;
+	// copy all points to result mesh
+	for (auto v_it = blossomMesh_step1.vertices_begin(); v_it != blossomMesh_step1.vertices_end(); ++v_it) {
+		PolyMesh::VertexHandle vh = *v_it;
+		resultVhVec.push_back(blossomMesh_refined.add_vertex(blossomMesh_step1.point(vh)));
+		point_counter++;
+	}
+
+	// property, edge mid point was already pushed
+	OpenMesh::HPropHandleT<bool>	hprop_mid_found_bool;
+	blossomMesh_step1.add_property(hprop_mid_found_bool, "hprop_mid_found_bool");
+	// property, index of edge mid point
+	OpenMesh::HPropHandleT<int>		hprop_mid_idx_int;
+	blossomMesh_step1.add_property(hprop_mid_idx_int, "hprop_mid_idx_int");
+
+
+	// TODO arrays!!!!
+	PolyMesh::VertexHandle face_mid;
+	vector<PolyMesh::VertexHandle> edge_mid(4);
+	vector<PolyMesh::VertexHandle> edge_start(4);
+
+	int face_mid_idx;
+	vector<int> mid_idx(4);
+	vector<int> start_idx(4);
+
+	for (auto f_it = blossomMesh_step1.faces_begin(); f_it != blossomMesh_step1.faces_end(); ++f_it) {
+		PolyMesh::FaceHandle fhs = *f_it;
+		int edge_counter = 0;
+		// vector with all four vertecies 
+		vector<vec3> cornerPoints;
+
+		// calculate mid point for every edge
+		for (auto fh_it = blossomMesh_step1.fh_iter(fhs); fh_it.is_valid(); ++fh_it) {
+			PolyMesh::HalfedgeHandle heh = *fh_it;
+			PolyMesh::HalfedgeHandle oheh = blossomMesh_step1.opposite_halfedge_handle(heh);
+			if (!blossomMesh_step1.property(hprop_mid_found_bool, heh)) {
+				blossomMesh_step1.property(hprop_mid_found_bool, heh) = true;
+				blossomMesh_step1.property(hprop_mid_found_bool, oheh) = true;
+				PolyMesh::VertexHandle idx_start = blossomMesh_step1.from_vertex_handle(heh);
+				PolyMesh::VertexHandle idx_end = blossomMesh_step1.to_vertex_handle(heh);
+				start_idx[edge_counter] = idx_start.idx();
+				vec3 *start_point = new vec3(blossomMesh_step1.point(idx_start)[0], blossomMesh_step1.point(idx_start)[1], blossomMesh_step1.point(idx_start)[2]);
+				vec3 *end_point = new vec3(blossomMesh_step1.point(idx_end)[0], blossomMesh_step1.point(idx_end)[1], blossomMesh_step1.point(idx_end)[2]);
+				vec3 edge = (*end_point - *start_point);
+				vec3 *mid_point = new vec3(start_point->x + 0.5 * edge.x, start_point->y + 0.5 * edge.y, start_point->z + 0.5 * edge.z);
+				resultVhVec.push_back(blossomMesh_refined.add_vertex(PolyMesh::Point(mid_point->x, mid_point->y, mid_point->z)));
+				cornerPoints.push_back(*start_point);
+				blossomMesh_step1.property(hprop_mid_idx_int, heh) = point_counter;
+				blossomMesh_step1.property(hprop_mid_idx_int, oheh) = point_counter;
+				mid_idx[edge_counter] = point_counter;
+				point_counter++;
+			}
+			else {
+				mid_idx[edge_counter] = blossomMesh_step1.property(hprop_mid_idx_int, heh);
+				PolyMesh::VertexHandle idx_start = blossomMesh_step1.from_vertex_handle(heh);
+				start_idx[edge_counter] = idx_start.idx();
+				vec3 *start_point = new vec3(blossomMesh_step1.point(idx_start)[0], blossomMesh_step1.point(idx_start)[1], blossomMesh_step1.point(idx_start)[2]);
+				cornerPoints.push_back(*start_point);
+			}
+			edge_counter++;
+		}
+		// calculate face mid point
+		cout << fhs.idx() <<  " " << edge_counter << " " << cornerPoints.size() << endl;
+		if (edge_counter == 4) {
+			float x = (1. / 4.) * (cornerPoints[0].x + cornerPoints[1].x + cornerPoints[2].x + cornerPoints[3].x);
+			float y = (1. / 4.) * (cornerPoints[0].y + cornerPoints[1].y + cornerPoints[2].y + cornerPoints[3].y);
+			float z = (1. / 4.) * (cornerPoints[0].z + cornerPoints[1].z + cornerPoints[2].z + cornerPoints[3].z);
+			resultVhVec.push_back(blossomMesh_refined.add_vertex(PolyMesh::Point(x, y, z)));
+			face_mid_idx = point_counter;
+			point_counter++;
+		}
+		else if (edge_counter == 3) {
+			float x = (1. / 3.) * (cornerPoints[0].x + cornerPoints[1].x + cornerPoints[2].x);
+			float y = (1. / 3.) * (cornerPoints[0].y + cornerPoints[1].y + cornerPoints[2].y);
+			float z = (1. / 3.) * (cornerPoints[0].z + cornerPoints[1].z + cornerPoints[2].z);
+			resultVhVec.push_back(blossomMesh_refined.add_vertex(PolyMesh::Point(x, y, z)));
+			face_mid_idx = point_counter;
+			point_counter++;
+		}
+
+
+		// create new faces
+		if (edge_counter == 4) {
+			face_mid = resultVhVec[face_mid_idx];
+			for (int k = 0; k < 4; k++) {
+				edge_mid[k] = resultVhVec[mid_idx[k]];
+				edge_start[k] = resultVhVec[start_idx[k]];
+			}
+			blossomMesh_refined.add_face({ face_mid, edge_mid[0], edge_start[1], edge_mid[1] });
+			blossomMesh_refined.add_face({ face_mid, edge_mid[1], edge_start[2], edge_mid[2] });
+			blossomMesh_refined.add_face({ face_mid, edge_mid[2], edge_start[3], edge_mid[3] });
+			blossomMesh_refined.add_face({ face_mid, edge_mid[3], edge_start[0], edge_mid[0] });
+		}
+		else if (edge_counter == 3) {
+			face_mid = resultVhVec[face_mid_idx];
+			for (int k = 0; k < 4; k++) {
+				edge_mid[k] = resultVhVec[mid_idx[k]];
+				edge_start[k] = resultVhVec[start_idx[k]];
+			}
+			blossomMesh_refined.add_face({ face_mid, edge_mid[0], edge_start[1], edge_mid[1] });
+			blossomMesh_refined.add_face({ face_mid, edge_mid[1], edge_start[2], edge_mid[2] });
+			blossomMesh_refined.add_face({ face_mid, edge_mid[2], edge_start[0], edge_mid[0] });
+		}
+	}
 }

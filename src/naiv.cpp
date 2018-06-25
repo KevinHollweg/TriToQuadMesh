@@ -350,6 +350,8 @@ void naiv::refine_mesh() {
 				mid_idx[edge_counter] = resultMesh_step1.property(hprop_mid_idx_int, heh);
 				PolyMesh::VertexHandle idx_start = resultMesh_step1.from_vertex_handle(heh);
 				start_idx[edge_counter] = idx_start.idx();
+				vec3 *start_point = new vec3(resultMesh_step1.point(idx_start)[0], resultMesh_step1.point(idx_start)[1], resultMesh_step1.point(idx_start)[2]);
+				cornerPoints.push_back(*start_point);
 			}
 			edge_counter++;
 		}

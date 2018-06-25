@@ -49,4 +49,6 @@ private:
 	void remove_unnecessary_vertices();
 
 	int remove_unnecessary_faces(int point_count);
+
+	void refine_mesh();
 };
